@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f6f4ec" />
+  <meta name="description" content="Một góc nhỏ để thả lỏng. Xoay, bóp và khám phá 5 bạn squishy 3D cùng âm thanh ASMR mềm mại." />
+  <title>Squishy Studio — Một chút mềm mại</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm5 4 6 6m0-6-6 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5m-4-4a8 8 0 0 1 14-2l1 3M4 15l1 3a8 8 0 0 0 14-2"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V6a2 2 0 0 1 4 0v6-3a2 2 0 0 1 4 0v3-1a2 2 0 0 1 4 0v5c0 4-3 6-7 6-3 0-4-2-6-4l-4-4a2 2 0 0 1 3-3l2 2"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 9V4m0 5h5M4 9a8 8 0 1 1-1 6"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="m17 3 4 4-4 4m0 2 4 4-4 4M3 7h3c5 0 7 10 12 10h3M3 17h3c2 0 4-3 6-5m2-3c1-1 2-2 4-2h3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  </defs></svg>
+  <div class="app-shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Squishy Studio trang chủ"><span class="brand-mark"><i></i><i></i></span><span>squishy<span class="brand-light"> studio</span><span class="brand-dot">®</span></span></a>
+      <nav aria-label="Điều hướng chính"><a href="#playground" class="nav-active">Sân chơi<span></span></a><a href="#collection">Bộ sưu tập <span class="nav-count">05</span></a></nav>
+      <button id="sound-toggle" class="sound-button" aria-pressed="true"><svg><use href="#i-sound"/></svg><span>Âm thanh bật</span><i class="status-dot"></i></button>
+    </header>
+    <main>
+      <section class="playground" id="playground" aria-label="Sân chơi squishy 3D">
+        <div class="intro">
+          <div class="eyebrow"><span>✳</span> KHÔNG VỘI. CỨ CHƠI THÔI.</div>
+          <h1>Thả lỏng.<br>Bóp <em>một chút.</em></h1>
+          <p>Một chiếc squishy mềm xinh. <br>Một khoảng nghỉ cho riêng bạn. <br>Cứ bóp đi, mọi thứ sẽ ổn thôi.</p>
+          <button id="squeeze-button" class="primary-button">Bóp thử nào <svg><use href="#i-arrow"/></svg></button>
+          <div class="headphones"><span>♬</span> Đeo tai nghe để cảm nhận rõ hơn</div>
+          <div class="little-note"><span>made for your<br>little breaks</span><svg viewBox="0 0 90 55"><path d="M4 10c35-19 10 45 65 21m-9-8 13 6-7 11"/></svg></div>
+        </div>
+        <div class="stage-wrap">
+          <div class="stage-halo"></div>
+          <div class="soft-stamp" aria-hidden="true"><span>mềm ơi là mềm</span><b>100%</b><span>♡ chỉ muốn bóp ♡</span></div>
+          <div id="stage" class="stage" aria-label="Mô hình squishy 3D. Nhấn giữ để bóp, chọn Xoay rồi kéo để xoay, lăn chuột để phóng to." tabindex="0"><div id="loading" class="loading"><span class="loading-blob"></span>Đang đánh thức bạn nhỏ…</div></div>
+          <div id="squish-bubble" class="squish-bubble" aria-hidden="true">squiiish!</div>
+          <div class="object-label"><span class="object-number" id="object-number">NO. 01</span><h2 id="object-name">Mèo quýt</h2><span id="object-personality">Một cục nắng nhỏ, mềm như mochi.</span></div>
+          <div class="stage-toolbar"><div class="mode-tabs" role="group" aria-label="Chế độ tương tác"><button class="selected" data-mode="squeeze" aria-pressed="true"><svg><use href="#i-hand"/></svg>Bóp</button><button data-mode="rotate" aria-pressed="false"><svg><use href="#i-rotate"/></svg>Xoay</button></div><button id="reset" class="reset-button" title="Đặt lại góc nhìn" aria-label="Đặt lại góc nhìn"><svg><use href="#i-reset"/></svg></button></div>
+          <div class="stage-hint" id="stage-hint">Nhấn giữ để bóp · Thả tay để nảy lại</div>
+        </div>
+        <aside class="settings" aria-label="Tùy chỉnh cảm giác">
+          <div class="settings-heading"><svg><use href="#i-spark"/></svg><h2>Cảm giác của bạn</h2></div>
+          <p>Mềm đến mức nào là vừa?</p>
+          <div class="setting"><label for="softness">Độ mềm <output id="softness-output">75%</output></label><input type="range" id="softness" min="15" max="100" value="75" style="--fill:75%"><div class="range-labels"><span>Chắc tay</span><span>Tan chảy</span></div></div>
+          <div class="setting"><label for="bounce">Độ đàn hồi <output id="bounce-output">60%</output></label><input type="range" id="bounce" min="10" max="100" value="60" style="--fill:60%"><div class="range-labels"><span>Chậm rãi</span><span>Tưng tưng</span></div></div>
+          <div class="setting"><label for="volume">Âm lượng <output id="volume-output">60%</output></label><input type="range" id="volume" min="0" max="100" value="60" style="--fill:60%"><div class="range-labels"><span>Thì thầm</span><span>Đã tai</span></div></div>
+          <div class="color-setting"><span>Màu của bạn nhỏ</span><div class="swatches" id="swatches" role="group" aria-label="Chọn màu squishy"></div></div>
+          <div class="settings-bottom"><span class="material-dot"></span><span>Siêu mềm. Siêu chữa lành.</span></div>
+        </aside>
+      </section>
+      <section class="collection" id="collection" aria-labelledby="collection-heading">
+        <div class="collection-heading"><div><span class="section-kicker">NHỮNG NGƯỜI BẠN MỀM MẠI</span><h2 id="collection-heading">Hôm nay, bạn muốn bóp ai? <span>5 bạn nhỏ đang đợi</span></h2></div><button id="random-button" class="random-button"><svg><use href="#i-shuffle"/></svg>Một chút bất ngờ</button></div>
+        <div class="model-grid" id="model-grid"></div>
+      </section>
+    </main>
+    <footer><span><i class="status-dot"></i> Một khoảng nghỉ nhỏ. Một tâm trạng tốt hơn.</span><span class="keyboard-hint"><kbd>Space</kbd> để bóp <span>·</span> <kbd>←</kbd> <kbd>→</kbd> để xoay</span><span>Chạm nhẹ. Thở chậm. <span class="footer-flower">✳</span></span></footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
