@@ -236,7 +236,7 @@ function makeCards() {
     model.visible=true;const bounds=model.userData.bounds;thumbnailCamera.lookAt(0,(bounds.min.y+bounds.max.y)/2,0);thumbRenderer.render(scene,thumbnailCamera);
     const url=thumbRenderer.domElement.toDataURL('image/png');model.visible=false;
     const button=document.createElement('button');button.className='model-card';button.dataset.index=String(index);button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',`Chọn ${definitions[index].name}, ${definitions[index].tag}`);
-    button.innerHTML=`<span class="card-index">${formatNumber(index)}</span><img src="${url}" alt="" width="120" height="95"><span class="model-info"><h3>${definitions[index].name}</h3><p>${definitions[index].tag}</p></span><span class="selected-dot">✓</span>`;
+    button.innerHTML=`<span class="card-index">${formatNumber(index)}</span><img src="${url}" alt="" width="120" height="95" draggable="false"><span class="model-info"><h3>${definitions[index].name}</h3><p>${definitions[index].tag}</p></span><span class="selected-dot">✓</span>`;
     button.addEventListener('click',()=>selectModel(index));grid.appendChild(button);
   });
   thumbRenderer.dispose();thumbRenderer.forceContextLoss();thumbRenderer=null;
@@ -355,10 +355,17 @@ function demoSqueeze() {
 function showToast(message) {clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').classList.add('visible');toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2400);}
 
 function bindEvents() {
+  // Keep a long press on the toy/cards inside the playground interaction.
+  for(const element of [$('.stage-wrap'),$('#model-grid')]){
+    for(const type of ['contextmenu','selectstart','dragstart'])element.addEventListener(type,event=>event.preventDefault());
+  }
+  // iOS also uses touch defaults for its native image/text callout.
+  stage.addEventListener('touchstart',event=>event.preventDefault(),{passive:false});
   let startX=0,startY=0,lastX=0,lastY=0,gesture='',anchor=null;
   const plane=new THREE.Plane(),world=new THREE.Vector3();
   stage.addEventListener('pointerdown',(event)=>{
     if(event.button!==0||state.pointerId!==null)return;
+    event.preventDefault();
     clearTimeout(releaseTimer);stage.dataset.input='pointer';stage.focus({preventScroll:true});
     state.pointerId=event.pointerId;stage.setPointerCapture(event.pointerId);
     startX=lastX=event.clientX;startY=lastY=event.clientY;
