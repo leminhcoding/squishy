@@ -1,49 +1,36 @@
 import * as THREE from './vendor/three.module.js';
+import { profiles } from './profiles.js';
+import { SquishyPhysics, deformationGLSL as deformGLSL, MAX_CONTACTS } from './physics.js';
+import { SquishAudio } from './audio.js';
+import { addSurfaceShader } from './surface.js';
+import { catalog as definitions, categories, matchingIndices } from './catalog.js';
+import { buildShopModel } from './shop-models.js';
 
 const $ = (s) => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const definitions = [
-  { name:'Mèo quýt', tag:'Mềm như mochi', note:'Một cục nắng nhỏ, mềm như mochi.', color:'#efad65', palette:['#efad65','#e7b3ad','#c0c99b','#b8afd5','#f0d995'], softness:75, bounce:60, type:'cat', pitch:180 },
-  { name:'Thỏ mây', tag:'Xốp như kẹo bông', note:'Tai dài, má hồng, ôm hết muộn phiền.', color:'#f2dfd8', palette:['#f2dfd8','#e9b9c4','#cbbfe0','#e9d49a','#b9d7ce'], softness:90, bounce:40, type:'bunny', pitch:290 },
-  { name:'Ếch matcha', tag:'Nảy tưng, vui tưng', note:'Một ngụm matcha, một ngày thật xanh.', color:'#aebd83', palette:['#aebd83','#c6d89a','#e9d794','#9bc8b6','#b7b4d7'], softness:65, bounce:85, type:'frog', pitch:125 },
-  { name:'Ma khoai môn', tag:'Dẻo ơi là dẻo', note:'Không hù ai đâu. Chỉ muốn được bóp thôi.', color:'#beb0d7', palette:['#beb0d7','#e2b8c8','#bdd7cc','#e8d498','#b3c5de'], softness:85, bounce:45, type:'ghost', pitch:220 },
-  { name:'Đào mochi', tag:'Mọng mềm, ngọt ngào', note:'Một chiếc đào nhỏ, ngọt ngào vừa đủ.', color:'#eeb2a6', palette:['#eeb2a6','#efc092','#e4b9d0','#e2ce94','#becd9d'], softness:80, bounce:55, type:'peach', pitch:245 },
-];
-
-const state = { index:0, mode:'squeeze', softness:.75, bounce:.6, volume:.6, sound:true, held:false, pointerId:null, amount:0, velocity:0, pressTime:0, yaw:.15, pitch:0, zoom:1, phase:0, count:0 };
+const collectionState={category:'all',query:''};
+const formatNumber=index=>String(index+1).padStart(2,'0');
+const state = {index:0,material:'foam',mode:'squeeze',softness:.75,bounce:.55,volume:.6,sound:true,held:false,pointerId:null,pressTime:0,yaw:.15,pitch:0,zoom:1,phase:0,count:0};
+const physics = new SquishyPhysics(profiles.foam);
 const deformation = {
-  uSquish:{value:0}, uContact:{value:new THREE.Vector3(0,.1,.8)},
-  uDirection:{value:new THREE.Vector3(0,0,1)}, uTime:{value:0}, uWobble:{value:0},
+  uContacts:{value:Array.from({length:MAX_CONTACTS},()=>new THREE.Vector3())},
+  uNormals:{value:Array.from({length:MAX_CONTACTS},()=>new THREE.Vector3(0,0,1))},
+  uDrags:{value:Array.from({length:MAX_CONTACTS},()=>new THREE.Vector3())},
+  uDepths:{value:new Float32Array(MAX_CONTACTS)}, uRadius:{value:profiles.foam.radius},uBulge:{value:profiles.foam.bulge},
 };
-
-// Every component shares a deformation field in model coordinates. This keeps
-// cheeks, eyes and appendages attached while the surface compresses and bulges.
-const deformGLSL = `
-uniform float uSquish;
-uniform vec3 uContact;
-uniform vec3 uDirection;
-uniform float uTime;
-uniform float uWobble;
-vec3 squishy(vec3 p) {
-  float s = uSquish;
-  vec3 q = p;
-  float width = 1.0 + s * 0.23;
-  q.x *= width;
-  q.z *= 1.0 + s * 0.14;
-  q.y = -0.86 + (p.y + 0.86) * (1.0 - s * 0.32);
-  vec3 delta = p - uContact;
-  float falloff = exp(-dot(delta, delta) * 3.8);
-  q -= uDirection * s * 0.57 * falloff;
-  float ring = exp(-pow(length(delta) - 0.68, 2.0) * 15.0);
-  q += normalize(delta + vec3(0.0001)) * ring * s * 0.055;
-  q.x += sin(p.y * 3.4 + uTime * 15.0) * uWobble * (p.y + 0.9) * 0.035;
-  return q;
+function syncDeformation(){
+  deformation.uRadius.value=physics.profile.radius;deformation.uBulge.value=physics.profile.bulge;
+  for(let i=0;i<MAX_CONTACTS;i++){
+    const c=physics.contacts[i];deformation.uDepths.value[i]=c?.depth??0;
+    if(c){deformation.uContacts.value[i].fromArray(c.point);deformation.uNormals.value[i].fromArray(c.normal);deformation.uDrags.value[i].fromArray(c.drag);}
+  }
 }
-`;
+
 function attachDeform(material, normals=true) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, deformation);
+    if(normals)addSurfaceShader(shader,material);
     shader.vertexShader = deformGLSL + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = squishy(position);');
     if (normals) shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', `
@@ -57,7 +44,7 @@ function attachDeform(material, normals=true) {
       #endif
     `);
   };
-  material.customProgramCacheKey = () => normals ? 'squishy-normal-v2' : 'squishy-depth-v2';
+  material.customProgramCacheKey = () => normals ? 'squishy-normal-v3' : 'squishy-depth-v3';
   return material;
 }
 
@@ -65,73 +52,16 @@ let renderer, scene, camera, root, models=[], floor, thumbRenderer;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const stage = $('#stage');
-let frame=0, lastTime=0, lastAudioTime=0, toastTimer, bubbleTimer, releaseTimer;
+let frame=0, lastTime=0, toastTimer, bubbleTimer, releaseTimer;
 
-class SquishAudio {
-  constructor() { this.context=null; this.noise=null; this.master=null; this.grainTimer=0; }
-  async start() {
-    if (!state.sound) return;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    if (!this.context) {
-      this.context = new AudioContext();
-      const ctx=this.context;
-      this.master=ctx.createGain(); this.master.gain.value=state.volume*.58;
-      const compressor=ctx.createDynamicsCompressor();
-      compressor.threshold.value=-18; compressor.ratio.value=5;
-      this.master.connect(compressor); compressor.connect(ctx.destination);
-      this.noise=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);
-      const channel=this.noise.getChannelData(0);
-      let brown=0;
-      for(let i=0;i<channel.length;i++) { brown=(brown+Math.random()*.12-.06)/1.025; channel[i]=brown*3.5; }
-    }
-    if (this.context.state==='suspended') await this.context.resume();
-  }
-  setVolume() { if(this.master) this.master.gain.setTargetAtTime(state.sound ? state.volume*.58 : 0,this.context.currentTime,.04); }
-  noiseBurst(duration,frequency,level,delay=0) {
-    const ctx=this.context, at=ctx.currentTime+delay;
-    const source=ctx.createBufferSource(); source.buffer=this.noise;
-    const filter=ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.setValueAtTime(frequency,at); filter.frequency.exponentialRampToValueAtTime(Math.max(90,frequency*.35),at+duration); filter.Q.value=.8;
-    const envelope=ctx.createGain(); envelope.gain.setValueAtTime(.0001,at); envelope.gain.exponentialRampToValueAtTime(Math.max(.001,level),at+.025); envelope.gain.exponentialRampToValueAtTime(.0001,at+duration);
-    source.connect(filter); filter.connect(envelope); envelope.connect(this.master);
-    source.start(at,Math.random()*.7); source.stop(at+duration+.03);
-  }
-  tone(from,to,duration,level,delay=0) {
-    const ctx=this.context, at=ctx.currentTime+delay;
-    const osc=ctx.createOscillator(), envelope=ctx.createGain();
-    osc.type='sine'; osc.frequency.setValueAtTime(from,at); osc.frequency.exponentialRampToValueAtTime(to,at+duration);
-    envelope.gain.setValueAtTime(.0001,at); envelope.gain.exponentialRampToValueAtTime(Math.max(.001,level),at+.013); envelope.gain.exponentialRampToValueAtTime(.0001,at+duration);
-    osc.connect(envelope); envelope.connect(this.master); osc.start(at); osc.stop(at+duration+.01);
-  }
-  press(power=.7) {
-    if(!this.context || !state.sound) return;
-    const p=definitions[state.index].pitch*(.93+Math.random()*.14);
-    this.noiseBurst(.28+state.softness*.22,p*3.6,.45*power);
-    this.tone(p*1.5,p*.42,.22,.14*power);
-    if(state.index===2) this.tone(p*2,p*.7,.12,.07,.045);
-    if(state.index===1) this.noiseBurst(.35,1800,.18,.04);
-    if(state.index===3) this.tone(p*.6,p*.28,.4,.12);
-  }
-  release(power) {
-    if(!this.context || !state.sound || power<.04) return;
-    const p=definitions[state.index].pitch;
-    this.tone(p*.6,p*(1.6+state.bounce*.8),.17,.15*power);
-    this.noiseBurst(.17,p*5,.33*power);
-    this.tone(p*2.1,p*1.1,.15,.07*power,.085);
-  }
-  rub(speed) {
-    if(!this.context || !state.sound) return;
-    const now=this.context.currentTime;
-    if(now-lastAudioTime<.09) return;
-    lastAudioTime=now;
-    this.noiseBurst(.13,definitions[state.index].pitch*5,Math.min(.25,speed*.02));
-  }
-}
-const audio = new SquishAudio();
+const audio = new SquishAudio(()=>state,()=>profiles[state.material],()=>showToast('Chưa tải được âm thanh. Bạn thử tải lại trang nhé.'));
 
-function material(color,roughness=.64) {
-  return attachDeform(new THREE.MeshPhysicalMaterial({color,roughness,metalness:0,clearcoat:.12,clearcoatRoughness:.58,sheen:.45,sheenRoughness:.8,sheenColor:'#fff4df'}));
+function material(color,roughness=.64,profile=null) {
+  const mat=new THREE.MeshPhysicalMaterial({color,roughness,metalness:0,clearcoat:profile?.coat??.05,clearcoatRoughness:.4,sheen:profile?.audio==='foam'?.15:.05,sheenRoughness:.8,sheenColor:'#fff4df'});
+  mat.userData.grain=profile?.grain??0;
+  return attachDeform(mat);
 }
+
 const depthMaterial=attachDeform(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking}),false);
 function addPart(group,geometry,mat,position=[0,0,0],scale=[1,1,1],rotation=[0,0,0],primary=false) {
   const matrix=new THREE.Matrix4().compose(new THREE.Vector3(...position),new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)),new THREE.Vector3(...scale));
@@ -150,7 +80,7 @@ function smile(group,mat,y,z,width=.11) { curve(group,mat,[[-width,y+.035,z],[0,
 
 function makeModel(def) {
   const group=new THREE.Group();
-  const body=material(def.color), dark=material('#4c3b32',.72), pink=material('#e99691',.8), cream=material('#fff0d2',.8);
+  const body=material(def.color,profiles[def.material].roughness,profiles[def.material]), dark=material('#4c3b32',.72), pink=material('#e99691',.8), cream=material('#fff0d2',.8);
   group.userData.body=body;
   const type=def.type;
   if(type==='cat') {
@@ -229,7 +159,14 @@ function makeModel(def) {
     sphere(group,green,[.35,.95,.02],[.42,.13,.19],[0,0,.35]);
     curve(group,material('#b3bf86'),[[.07,.88,.17],[.32,.96,.17],[.62,1.05,.08]],.009);
   }
+  if(!['cat','bunny','frog','ghost','peach'].includes(type))buildShopModel(type,group,{body,dark,pink,cream},{material,addPart,sphere,curve,eye,blush,smile});
+  group.userData.pickMeshes=group.children.filter(mesh=>mesh.userData.primary).map(mesh=>{
+    const proxy=new THREE.Mesh(mesh.geometry.clone(),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+    proxy.userData.rest=Float32Array.from(mesh.geometry.attributes.position.array);proxy.userData.original=mesh;proxy.matrixAutoUpdate=false;
+    return proxy;
+  });
   group.userData.definition=def;
+  group.userData.bounds=new THREE.Box3().setFromObject(group);
   group.visible=false;
   return group;
 }
@@ -296,23 +233,44 @@ function makeCards() {
   const thumbnailCamera=new THREE.OrthographicCamera(-1.72,1.72,1.36,-1.36,.1,40);thumbnailCamera.position.set(2.3,1.7,7);thumbnailCamera.lookAt(0,.2,0);
   root.rotation.y=.14;
   models.forEach((model,index)=>{
-    model.visible=true; thumbRenderer.render(scene,thumbnailCamera);
+    model.visible=true;const bounds=model.userData.bounds;thumbnailCamera.lookAt(0,(bounds.min.y+bounds.max.y)/2,0);thumbRenderer.render(scene,thumbnailCamera);
     const url=thumbRenderer.domElement.toDataURL('image/png');model.visible=false;
-    const button=document.createElement('button');button.className='model-card';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',`Chọn ${definitions[index].name}, ${definitions[index].tag}`);
-    button.innerHTML=`<span class="card-index">0${index+1}</span><img src="${url}" alt="" width="120" height="95"><span class="model-info"><h3>${definitions[index].name}</h3><p>${definitions[index].tag}</p></span><span class="selected-dot">✓</span>`;
+    const button=document.createElement('button');button.className='model-card';button.dataset.index=String(index);button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',`Chọn ${definitions[index].name}, ${definitions[index].tag}`);
+    button.innerHTML=`<span class="card-index">${formatNumber(index)}</span><img src="${url}" alt="" width="120" height="95"><span class="model-info"><h3>${definitions[index].name}</h3><p>${definitions[index].tag}</p></span><span class="selected-dot">✓</span>`;
     button.addEventListener('click',()=>selectModel(index));grid.appendChild(button);
   });
   thumbRenderer.dispose();thumbRenderer.forceContextLoss();thumbRenderer=null;
+  buildFilters();filterCollection();
+  $('#catalog-count').textContent=definitions.length;$('#collection-count').textContent=`${definitions.length} mẫu mềm mại đang đợi`;
+}
+
+function buildFilters(){
+  const container=$('#collection-filters');
+  for(const category of categories){
+    const button=document.createElement('button');button.type='button';button.dataset.category=category.id;
+    button.textContent=`${category.label} · ${matchingIndices(category.id).length}`;
+    button.addEventListener('click',()=>{collectionState.category=category.id;filterCollection();});container.appendChild(button);
+  }
+}
+
+function filterCollection(){
+  const indices=matchingIndices(collectionState.category,collectionState.query),shown=new Set(indices);
+  document.querySelectorAll('.model-card').forEach(card=>{card.hidden=!shown.has(Number(card.dataset.index));});
+  document.querySelectorAll('[data-category]').forEach(button=>{const selected=button.dataset.category===collectionState.category;button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));});
+  $('#collection-results').textContent=indices.length===definitions.length?`${definitions.length} mẫu để bạn khám phá`:`${indices.length} / ${definitions.length} mẫu`;
+  $('#collection-empty').hidden=indices.length!==0;$('#random-button').disabled=indices.length===0;
 }
 
 function selectModel(index,notify=true) {
   clearTimeout(releaseTimer);release();
   state.index=index;const def=definitions[index];
   models.forEach((model,i)=>model.visible=i===index);
-  state.softness=def.softness/100;state.bounce=def.bounce/100;state.yaw=.15;state.pitch=0;state.zoom=1;state.amount=0;state.velocity=0;
-  deformation.uSquish.value=0;deformation.uContact.value.set(0,.1,.8);deformation.uDirection.value.set(0,0,1);
+  state.softness=def.softness/100;state.bounce=def.bounce/100;state.yaw=.15;state.pitch=0;state.zoom=1;
+  setMaterial(def.material);
   models[index].userData.body.color.set(def.color);
-  $('#object-name').textContent=def.name;$('#object-number').textContent=`NO. 0${index+1}`;$('#object-personality').textContent=def.note;
+  const bounds=models[index].userData.bounds;camera.lookAt(0,(bounds.min.y+bounds.max.y)/2,0);
+  if(!matchingIndices(collectionState.category,collectionState.query).includes(index)){collectionState.category='all';collectionState.query='';$('#model-search').value='';filterCollection();}
+  $('#object-name').textContent=def.name;$('#object-number').textContent=`NO. ${formatNumber(index)}`;$('#object-personality').textContent=def.note;
   for(const key of ['softness','bounce']) {$('#'+key).value=def[key];updateSlider(key);}
   document.querySelectorAll('.model-card').forEach((button,i)=>{button.classList.toggle('active',i===index);button.setAttribute('aria-pressed',String(i===index));});
   $('#swatches').innerHTML='';
@@ -323,7 +281,7 @@ function selectModel(index,notify=true) {
       $('#swatches').querySelectorAll('button').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});
     });$('#swatches').appendChild(button);
   });
-  if(notify){state.phase=.8;audio.start().then(()=>audio.tone && audio.context && state.sound && audio.tone(def.pitch,def.pitch*1.5,.12,.06));}
+  if(notify){state.phase=.8;audio.stop();}
 }
 
 function updateSlider(key) {
@@ -336,38 +294,57 @@ function updateSlider(key) {
 function setMode(mode) {
   release();state.mode=mode;stage.dataset.mode=mode;
   document.querySelectorAll('[data-mode]').forEach(b=>{if(b.tagName==='BUTTON'){b.classList.toggle('selected',b.dataset.mode===mode);b.setAttribute('aria-pressed',String(b.dataset.mode===mode));}});
-  $('#stage-hint').textContent=mode==='squeeze'?'Nhấn giữ để bóp · Thả tay để nảy lại':'Kéo để xoay mọi góc · Lăn chuột để thu phóng';
+  $('#stage-hint').textContent=mode==='squeeze'?'Nhấn giữ để lún · Kéo để nắn · Thả để hồi hình':'Kéo để xoay mọi góc · Lăn chuột để thu phóng';
+}
+
+function setMaterial(key) {
+  release();state.material=key;physics.reset(profiles[key]);audio.stop();syncDeformation();
+  const body=models[state.index]?.userData.body;
+  if(body){const p=profiles[key];body.roughness=p.roughness;body.clearcoat=p.coat;body.userData.grain=p.grain;body.needsUpdate=true;}
+  $('#material').value=key;$('#material-description').textContent=profiles[key].description;
+  $('#material-badge').textContent=profiles[key].label;
 }
 
 function hitTest(event) {
   const rect=stage.getBoundingClientRect();
   mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
-  raycaster.setFromCamera(mouse,camera);
-  return raycaster.intersectObjects(models[state.index].children,false)[0];
-}
-
-function setContact(hit) {
-  if(!hit) return;
-  const point=root.worldToLocal(hit.point.clone());
-  // Child geometry is baked; model-only scale/translation is applied here.
-  const model=models[state.index];
-  point.sub(model.position).divide(model.scale);
-  deformation.uContact.value.copy(point);
-  const normal=hit.face.normal.clone();
-  deformation.uDirection.value.copy(normal).normalize();
+  raycaster.setFromCamera(mouse,camera);scene.updateMatrixWorld(true);
+  const proxies=models[state.index].userData.pickMeshes;
+  const out=[0,0,0];
+  for(const proxy of proxies){
+    proxy.matrix.copy(proxy.userData.original.matrixWorld);proxy.matrixWorld.copy(proxy.matrix);
+    const rest=proxy.userData.rest,positions=proxy.geometry.attributes.position.array;
+    for(let i=0;i<rest.length;i+=3){physics.deform(rest[i],rest[i+1],rest[i+2],out);positions[i]=out[0];positions[i+1]=out[1];positions[i+2]=out[2];}
+    proxy.geometry.attributes.position.needsUpdate=true;proxy.geometry.computeBoundingSphere();proxy.geometry.computeBoundingBox();
+  }
+  const hit=raycaster.intersectObjects(proxies,false)[0];
+  if(hit){
+    const local=hit.object.worldToLocal(hit.point.clone()),pos=hit.object.geometry.attributes.position;
+    const a=new THREE.Vector3().fromBufferAttribute(pos,hit.face.a),b=new THREE.Vector3().fromBufferAttribute(pos,hit.face.b),c=new THREE.Vector3().fromBufferAttribute(pos,hit.face.c);
+    const weights=THREE.Triangle.getBarycoord(local,a,b,c,new THREE.Vector3());
+    if(weights){
+      const rest=hit.object.userData.original.geometry.attributes.position;
+      const ra=new THREE.Vector3().fromBufferAttribute(rest,hit.face.a),rb=new THREE.Vector3().fromBufferAttribute(rest,hit.face.b),rc=new THREE.Vector3().fromBufferAttribute(rest,hit.face.c);
+      hit.restPoint=ra.clone().multiplyScalar(weights.x).addScaledVector(rb,weights.y).addScaledVector(rc,weights.z);
+      hit.restNormal=rb.clone().sub(ra).cross(rc.clone().sub(ra)).normalize();
+    }
+  }
+  return hit;
 }
 
 async function press(hit=null) {
   if(state.held)return;
   state.held=true;state.pressTime=performance.now();state.count++;
-  if(hit)setContact(hit);else{deformation.uContact.value.set(0,.15,.78);deformation.uDirection.value.set(0,0,1);}
-  clearTimeout(bubbleTimer);$('#squish-bubble').textContent=['squiiish!','mềm xỉu…','boop!','thêm chút nữa ♡'][state.count%4];$('#squish-bubble').classList.add('visible');
-  await audio.start();if(state.held)audio.press(.7+state.softness*.3);
+  let point=definitions[state.index].pressPoint??[0,.12,.78],normal=[0,0,1];
+  if(hit){point=(hit.restPoint??models[state.index].worldToLocal(hit.point.clone())).toArray();normal=(hit.restNormal??hit.face.normal).toArray();}
+  physics.press(point,normal);
+  clearTimeout(bubbleTimer);$('#squish-bubble').textContent=['squiiish!','mềm xỉu…','chậm thôi ♡','thêm chút nữa ♡'][state.count%4];$('#squish-bubble').classList.add('visible');
+  await audio.start();
 }
 
 function release() {
   if(!state.held)return;
-  state.held=false;audio.release(Math.max(.2,state.amount));
+  state.held=false;physics.release();
   bubbleTimer=setTimeout(()=>$('#squish-bubble').classList.remove('visible'),450);
 }
 
@@ -378,49 +355,71 @@ function demoSqueeze() {
 function showToast(message) {clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').classList.add('visible');toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2400);}
 
 function bindEvents() {
-  let startX=0,startY=0,lastX=0,lastY=0,gesture='';
+  let startX=0,startY=0,lastX=0,lastY=0,gesture='',anchor=null;
+  const plane=new THREE.Plane(),world=new THREE.Vector3();
   stage.addEventListener('pointerdown',(event)=>{
-    if(event.button!==0)return;
-    clearTimeout(releaseTimer);
-    stage.focus({preventScroll:true});
+    if(event.button!==0||state.pointerId!==null)return;
+    clearTimeout(releaseTimer);stage.dataset.input='pointer';stage.focus({preventScroll:true});
     state.pointerId=event.pointerId;stage.setPointerCapture(event.pointerId);
     startX=lastX=event.clientX;startY=lastY=event.clientY;
-    const hit=hitTest(event);
-    gesture=state.mode==='squeeze'&&hit?'squeeze':'rotate';
-    if(gesture==='squeeze')press(hit);
+    const hit=hitTest(event);gesture=state.mode==='squeeze'&&hit?'squeeze':'rotate';
+    if(gesture==='squeeze'){
+      plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.point);
+      anchor=models[state.index].worldToLocal(hit.point.clone());press(hit);
+    }
   });
   stage.addEventListener('pointermove',(event)=>{
     if(event.pointerId!==state.pointerId)return;
     const dx=event.clientX-lastX,dy=event.clientY-lastY;
     if(gesture==='rotate'){state.yaw+=dx*.009;state.pitch=clamp(state.pitch+dy*.006,-.65,.55);}
-    else if(state.held){const hit=hitTest(event);if(hit)setContact(hit);audio.rub(Math.hypot(dx,dy));}
+    else if(state.held&&physics.active){
+      const rect=stage.getBoundingClientRect();mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);raycaster.setFromCamera(mouse,camera);
+      if(raycaster.ray.intersectPlane(plane,world)){
+        const local=models[state.index].worldToLocal(world.clone()).sub(anchor);
+        local.clampLength(0,profiles[state.material].audio==='foam'?.4:.8);
+        physics.active.targetDrag=local.multiplyScalar(.8).toArray();
+      }
+      const down=(event.clientY-startY)/rect.height;
+      physics.pressure=clamp(.5+down*1.8,.18,1);
+      if(event.pointerType==='pen')physics.pressure=clamp(event.pressure,.1,1);
+      physics.speed=Math.min(4,Math.hypot(dx,dy)*.07);
+    }
     lastX=event.clientX;lastY=event.clientY;
   });
-  function endPointer(event){if(event.pointerId===state.pointerId){release();state.pointerId=null;gesture='';}}
+  function endPointer(event){if(event.pointerId===state.pointerId){release();state.pointerId=null;gesture='';anchor=null;}}
   stage.addEventListener('pointerup',endPointer);stage.addEventListener('pointercancel',endPointer);stage.addEventListener('lostpointercapture',endPointer);
+
+
   stage.addEventListener('wheel',(event)=>{event.preventDefault();state.zoom=clamp(state.zoom-event.deltaY*.001, .72,1.35);},{passive:false});
   document.querySelectorAll('button[data-mode]').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
   $('#squeeze-button').addEventListener('click',demoSqueeze);
-  $('#reset').addEventListener('click',()=>{clearTimeout(releaseTimer);release();state.yaw=.15;state.pitch=0;state.zoom=1;state.amount=0;state.velocity=0;showToast('Bạn nhỏ đã về tư thế ban đầu ♡');});
-  $('#random-button').addEventListener('click',()=>{let index=(state.index+1+Math.floor(Math.random()*4))%5;selectModel(index);showToast(`Hôm nay có ${definitions[index].name} ở bên bạn ♡`);});
+  $('#reset').addEventListener('click',()=>{clearTimeout(releaseTimer);release();state.yaw=.15;state.pitch=0;state.zoom=1;physics.reset();audio.stop();syncDeformation();showToast('Bạn nhỏ đã về tư thế ban đầu ♡');});
+  $('#random-button').addEventListener('click',()=>{
+    const visible=matchingIndices(collectionState.category,collectionState.query);const options=visible.filter(i=>i!==state.index);const pool=options.length?options:visible;
+    if(!pool.length)return;const index=pool[Math.floor(Math.random()*pool.length)];selectModel(index);showToast(`Hôm nay có ${definitions[index].name} ở bên bạn ♡`);
+  });
+  $('#model-search').addEventListener('input',event=>{collectionState.query=event.target.value;filterCollection();});
+  $('#clear-filters').addEventListener('click',()=>{collectionState.category='all';collectionState.query='';$('#model-search').value='';filterCollection();$('#model-search').focus();});
   $('#sound-toggle').addEventListener('click',()=>{
     state.sound=!state.sound;
     $('#sound-toggle').setAttribute('aria-pressed',String(state.sound));$('#sound-toggle span').textContent=state.sound?'Âm thanh bật':'Âm thanh tắt';$('#sound-toggle use').setAttribute('href',state.sound?'#i-sound':'#i-mute');
     if(state.sound)audio.start();audio.setVolume();
   });
   for(const key of ['softness','bounce','volume'])$('#'+key).addEventListener('input',()=>updateSlider(key));
+  $('#material').addEventListener('change',event=>setMaterial(event.target.value));
   document.addEventListener('keydown',(event)=>{
+    stage.dataset.input='keyboard';
     if(event.target.matches('input,textarea,select,button,a'))return;
     if(event.code==='Space'){event.preventDefault();if(!event.repeat)press();}
     else if(event.code==='ArrowLeft'){event.preventDefault();state.yaw-=.16;}
     else if(event.code==='ArrowRight'){event.preventDefault();state.yaw+=.16;}
     else if(event.key.toLowerCase()==='r')setMode('rotate');
     else if(event.key.toLowerCase()==='b')setMode('squeeze');
-    else if(/^[1-5]$/.test(event.key))selectModel(Number(event.key)-1);
+    else if(/^[1-9]$/.test(event.key))selectModel(Number(event.key)-1);
   });
   document.addEventListener('keyup',event=>{if(event.code==='Space')release();});
-  window.addEventListener('blur',()=>{release();state.pointerId=null;});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){release();lastTime=0;}});
+  window.addEventListener('blur',()=>{release();state.pointerId=null;audio.stop();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){release();audio.stop();lastTime=0;}});
   renderer.domElement.addEventListener('webglcontextlost',(event)=>{event.preventDefault();showToast('Kết nối 3D bị gián đoạn. Bạn tải lại trang giúp nhé.');});
 }
 
@@ -428,20 +427,15 @@ function animate(time) {
   requestAnimationFrame(animate);
   if(document.hidden)return;
   const dt=Math.min((time-lastTime)/1000 || .016,.033);lastTime=time;frame++;
-  const heldDuration=state.held?(time-state.pressTime)/1000:0;
-  const target=state.held?(.25+state.softness*.57)*Math.min(1,heldDuration*5+.35):0;
-  // Damped spring integrated with fixed small substeps for stable recovery.
-  const stiffness=state.held?135:35+state.bounce*155;
-  const damping=state.held?20:15-state.bounce*8;
-  const step=dt/3;
-  for(let i=0;i<3;i++){
-    state.velocity+=((target-state.amount)*stiffness-state.velocity*damping)*step;
-    state.amount+=state.velocity*step;
-  }
-  state.amount=clamp(state.amount,-.2,1);
-  deformation.uSquish.value=state.amount;
-  deformation.uTime.value=time/1000;
-  deformation.uWobble.value=reducedMotion?0:Math.min(.6,Math.abs(state.velocity)*.15);
+  physics.softness=state.softness;physics.rebound=state.bounce;
+  const motion=physics.update(dt);syncDeformation();
+  audio.update(motion,state.held,physics.active?.point[0]??0);
+  const depth=physics.depth;
+  $('#recovery-status').textContent=state.held?'Đang bóp':depth>.012?'Đang hồi hình…':'Sẵn sàng để bóp';
+  $('#recovery-fill').style.width=Math.min(100,depth/.8*100)+'%';
+  stage.dataset.deformation=depth.toFixed(4);
+
+
   if(state.phase>0)state.phase=Math.max(0,state.phase-dt*2);
   root.rotation.y=THREE.MathUtils.damp(root.rotation.y,state.yaw,12,dt);
   root.rotation.x=THREE.MathUtils.damp(root.rotation.x,state.pitch,12,dt);
@@ -450,4 +444,5 @@ function animate(time) {
   renderer.render(scene,camera);
 }
 
+export function getDiagnostics(){return {index:state.index,name:definitions[state.index].name,modelCount:definitions.length,pickMeshCount:models[state.index]?.userData.pickMeshes.length??0,material:state.material,held:state.held,depth:physics.depth,contacts:physics.contacts.length,audio:{...audio.stats},render:renderer?{...renderer.info.render}:null};}
 init();

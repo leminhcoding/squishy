@@ -1,0 +1,7 @@
+.git
+.openai
+qa
+test
+docs
+*.tar.gz
+scripts/prepare-audio.py

@@ -1,0 +1,14 @@
+{
+  "name": "squishy-studio",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A standalone tactile 3D playground with material-specific viscoelastic deformation and recorded Foley.",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "build": "node scripts/validate.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" }
+}
